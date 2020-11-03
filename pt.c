@@ -23,7 +23,6 @@ uint64_t getTableSize() {
 long getBitMask() {
     static int isInit = 0;
     static uint64_t mask = 0;
-
     if (isInit == 0) {
         mask = (1u << ENTRY_SIZE_BITS) - 1;
         isInit = 1;
@@ -39,11 +38,10 @@ uint64_t *getOrCreateLevel(uint64_t **root) {
 }
 
 uint64_t *getOrCreateNextLevel(uint64_t *srcCell) {
-    uint64_t **ptToTable;
     if (*srcCell == 0) {
         *srcCell = alloc_page_frame() << 12u;
     }
-    ptToTable = (uint64_t **) phys_to_virt(*srcCell);
+    uint64_t **ptToTable = (uint64_t **) phys_to_virt(*srcCell);
     getOrCreateLevel(ptToTable);
     return *ptToTable;
 }
