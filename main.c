@@ -107,9 +107,7 @@ void update_many_with_prefix(uint64_t pt) {
 
         page_table_update(pt, vpn_arr[i], ppn_arr[i]);
         assert_equal(page_table_query(pt, vpn_arr[i]), ppn_arr[i]);
-        printf("page_table[%llu] = %llu\n", vpn_arr[i], ppn_arr[i]);
         assert_equal(page_table_query(pt, vpn_arr[i]), ppn_arr[i]);
-        printf("page_table[%llu] = %llu\n", vpn_arr[i], ppn_arr[i]);
 
     }
     for (int i = 0; i < amount; i++) {

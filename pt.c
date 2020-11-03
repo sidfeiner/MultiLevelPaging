@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "os.h"
+#include "os.c"
 
 #define BITS 64
 #define LEVELS_AMOUNT  5
