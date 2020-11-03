@@ -3,7 +3,7 @@
 #include "os.h"
 
 #define BITS 64
-#define LEVELS_AMOUNT  3
+#define LEVELS_AMOUNT  5
 #define LOWER_OFFSET_BITS  12
 #define UPPER_UNUSED_BITS 7
 
@@ -14,7 +14,7 @@ uint64_t getTableSize() {
     static int isInit = 0;
     static uint64_t tableSize;
     if (isInit == 0) {
-        tableSize = 2u << ENTRY_SIZE_BITS;
+        tableSize = 1u << ENTRY_SIZE_BITS;
         isInit = 1;
     }
     return tableSize;
@@ -25,66 +25,61 @@ long getBitMask() {
     static uint64_t mask = 0;
 
     if (isInit == 0) {
-        //mask = (uint64_t)((0x1 << ENTRY_SIZE_BITS)-1)<< (VPN_BITS_AMOUNT - ENTRY_SIZE_BITS);
         mask = (1u << ENTRY_SIZE_BITS) - 1;
         isInit = 1;
     }
     return mask;
 }
 
-void **ensureTable(void **srcCell, size_t size) {
-    if (*srcCell == NULL) {
-        *srcCell = calloc(getTableSize(), size);
+uint64_t *getOrCreateLevel(uint64_t **root) {
+    if (*root == NULL) {
+        *root = calloc(getTableSize(), sizeof(uint64_t));
     }
-    return srcCell;
+    return *root;
 }
 
-void **ensureNextFinalTable(void **srcCell) {
-    return ensureTable(srcCell, sizeof(uint64_t));
+uint64_t *getOrCreateNextLevel(uint64_t *srcCell) {
+    uint64_t **ptToTable;
+    if (*srcCell == 0) {
+        *srcCell = alloc_page_frame() << 12u;
+    }
+    ptToTable = (uint64_t **) phys_to_virt(*srcCell);
+    getOrCreateLevel(ptToTable);
+    return *ptToTable;
 }
 
-void **ensureNextNonFinalTable(void **srcCell) {
-    return ensureTable(srcCell, sizeof(void **));
-}
-
-uint64_t handleLevel(void **curPagingTable, uint64_t curLevelBits, unsigned int ensureFinalTable, unsigned int readOnly) {
-    void **levelToLevelRoot = (void **) *curPagingTable + curLevelBits;
+uint64_t
+handleLevel(uint64_t **curPagingTable, uint64_t curLevelBits, unsigned int readOnly) {
+    uint64_t *curRoot = *curPagingTable + curLevelBits;
     if (readOnly == 1) {
-        if (*levelToLevelRoot == NULL) return NO_MAPPING;
-        else *curPagingTable = *levelToLevelRoot;
+        if (*curRoot == 0) return NO_MAPPING;
+        else *curPagingTable = *(uint64_t **) (phys_to_virt(*curRoot));
     } else {
-        if (ensureFinalTable == 1) *curPagingTable = *ensureNextFinalTable(levelToLevelRoot);
-        else *curPagingTable = *ensureNextNonFinalTable(levelToLevelRoot);
+        *curPagingTable = getOrCreateNextLevel(curRoot);
     }
     return 0;
 }
 
-uint64_t walkAndUpdate(void *levelsRoot, uint64_t vpn, uint64_t ppn, unsigned int readOnly) {
-    void *curPagingTable;
+uint64_t walkAndUpdate(uint64_t *levelsRoot, uint64_t vpn, uint64_t ppn, unsigned int readOnly) {
+    uint64_t *curPagingTable;
     uint64_t curLevelBits, *finalRoot, bitMask = getBitMask();
     curPagingTable = levelsRoot;
     for (int curLevel = 1; curLevel <= LEVELS_AMOUNT; curLevel++) {
         curLevelBits = (vpn >> ((LEVELS_AMOUNT - curLevel) * ENTRY_SIZE_BITS)) & bitMask;
         if (curLevel == LEVELS_AMOUNT) {
-            finalRoot = (uint64_t *) curPagingTable + curLevelBits;
-            if (readOnly == 1) {
-                return *finalRoot == 0 ? NO_MAPPING : *finalRoot;
-            } else {
-                *finalRoot = ppn == NO_MAPPING ? 0 : ppn;
-            }
-        } else if (curLevel < LEVELS_AMOUNT - 1) {
-            if (handleLevel(&curPagingTable, curLevelBits, 0, readOnly) == NO_MAPPING) return NO_MAPPING;
-        } else if (curLevel == LEVELS_AMOUNT - 1) {
-            if (handleLevel(&curPagingTable, curLevelBits, 1, readOnly) == NO_MAPPING) return NO_MAPPING;
+            finalRoot = curPagingTable + curLevelBits;
+            if (readOnly == 1) return *finalRoot == 0 ? NO_MAPPING : *finalRoot;
+            else *finalRoot = ppn == NO_MAPPING ? 0 : ppn;
+        } else {
+            if (handleLevel(&curPagingTable, curLevelBits, readOnly) == NO_MAPPING) return NO_MAPPING;
         }
     }
     return NO_MAPPING;
 }
 
 void page_table_update(uint64_t pt, uint64_t vpn, uint64_t ppn) {
-    void **root;
-    root = ensureNextNonFinalTable(phys_to_virt(pt));
-    walkAndUpdate(*root, vpn, ppn, 0);
+    uint64_t *root = getOrCreateLevel((uint64_t **) phys_to_virt(pt));
+    walkAndUpdate(root, vpn, ppn, 0);
 }
 
 uint64_t page_table_query(uint64_t pt, uint64_t vpn) {
