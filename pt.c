@@ -30,6 +30,11 @@ long getBitMask() {
     return mask;
 }
 
+int isValidAddress(uint64_t vpn) {
+    static uint64_t mask = 0x1u;
+    return (vpn & mask) == 0u ? 0 : 1;
+}
+
 uint64_t *getOrCreateLevel(uint64_t **root) {
     if (*root == NULL) {
         *root = calloc(getTableSize(), sizeof(uint64_t));
@@ -38,8 +43,8 @@ uint64_t *getOrCreateLevel(uint64_t **root) {
 }
 
 uint64_t *getOrCreateNextLevel(uint64_t *srcCell) {
-    if (*srcCell == 0) {
-        *srcCell = alloc_page_frame() << 12u;
+    if (isValidAddress(*srcCell) == 0) {
+        *srcCell = (alloc_page_frame() << 12u) | 0x1u;  // Add zero offset + valid bit
     }
     uint64_t **ptToTable = (uint64_t **) phys_to_virt(*srcCell);
     getOrCreateLevel(ptToTable);
@@ -50,7 +55,7 @@ uint64_t
 handleLevel(uint64_t **curPagingTable, uint64_t curLevelBits, unsigned int readOnly) {
     uint64_t *curRoot = *curPagingTable + curLevelBits;
     if (readOnly == 1) {
-        if (*curRoot == 0) return NO_MAPPING;
+        if (isValidAddress(*curRoot) == 0) return NO_MAPPING;  // If valid bit is zero
         else *curPagingTable = *(uint64_t **) (phys_to_virt(*curRoot));
     } else {
         *curPagingTable = getOrCreateNextLevel(curRoot);
@@ -81,7 +86,7 @@ void page_table_update(uint64_t pt, uint64_t vpn, uint64_t ppn) {
 }
 
 uint64_t page_table_query(uint64_t pt, uint64_t vpn) {
-    uint64_t **root = (uint64_t **) phys_to_virt(pt);
+    uint64_t **root = (uint64_t **) phys_to_virt(pt << 12u);
     if (root == NULL) return NO_MAPPING;
     if (*root == NULL) return NO_MAPPING;
     return walkAndUpdate(*root, vpn, -1, 1);
